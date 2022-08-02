@@ -1,0 +1,153 @@
+---
+title: "Movie Data Analysis"
+author: "Sagar Sadak"
+date: "02/24/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, message=FALSE)
+```
+
+# Import libraries and dataset
+```{r}
+library(ggplot2movies)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+df = movies
+head(movies)
+```
+
+# 1) Range of years of production
+```{r}
+paste("Year of production of the oldest movie:", min(df$year))
+paste("Year of production of the latest movie:", max(df$year))
+```
+
+# 2) Proportion of movies with budget data included
+```{r}
+proportion = nrow(filter(df, !is.na(budget))) / nrow(df)
+paste("Proportion with budget data:", proportion)
+paste("Proportion without budget data:", 1 - proportion)
+```
+
+### A very small proportion of movies actually have their budget data included in this dataset. A little over 91% do not have budget data included at all.
+
+## 5 most expensive movies and their budget in USD
+```{r}
+arrange(df, desc(df$budget))[1:5,c(1,4)]
+```
+
+### Spider-Man 2 and Titanic are the most expensive movie with a budget of 200 million USD.
+
+# 3) 5 longest movies and their length in minutes
+```{r}
+arrange(df, desc(df$length))[1:5,c(1,3)]
+```
+
+### "The Cure for Insomnia" is 5220 minutes or 87 hours long!
+
+# 4) Shortest and longest "Short" movies and their length
+```{r}
+short = filter(df, df$Short == 1)
+# Shortest "short" movie
+arrange(short, short$length)[1,c(1,3)]
+# Longest "short" movie
+arrange(short, desc(short$length))[1,c(1,3)]
+```
+
+# 5) Number of movies in each genre
+```{r}
+temp = df[,18:24]
+sums = as.data.frame(apply(temp, 2, sum))
+ggplot(sums, aes(x=rownames(sums), y=sums[,], fill=rownames(sums))) + geom_bar(stat='identity') +
+xlab("Genre") + ylab("Count") + ggtitle("Number of movies per Genre") + 
+  scale_fill_discrete(name="genre") + 
+  geom_text(aes(x=rownames(sums), y=sums[,], label=sums[,]), vjust=-0.5)
+```
+
+# 6) Average rating in each genre
+
+### I implemented two different solutions and timed their execution time
+```{r}
+start <- Sys.time()
+temp = data.frame(matrix(ncol = 2, nrow = 0))
+colnames(temp) <- c("genre","mean_rating")
+for (i in colnames(df)[18:24]){
+  temp[nrow(temp) + 1, ] <- c(i, mean((filter(df, df[i] == 1))$rating))
+}
+temp
+end <- Sys.time()
+print(end-start)
+
+# second method
+start <- Sys.time()
+gather(df, "genre","in_genre",18:24) %>% filter(in_genre == 1) %>% group_by(genre) %>% 
+  summarize(mean_rating = mean(rating))
+end <- Sys.time()
+print(end-start)
+
+gather(df, "genre","in_genre",18:24) %>% filter(in_genre == 1) %>% group_by(genre) %>% 
+  summarize(mean_rating = mean(rating)) %>% ggplot(aes(genre, mean_rating, fill=genre)) + 
+  geom_bar(stat="identity")
+```
+
+### The first implementation is much faster than using the gather function in the second implementation, but coding the second one is faster.
+
+# 7) Histogram of movie lengths under 5 hours
+```{r}
+filter(df, df$length < 300) %>% ggplot(aes(length)) + geom_histogram(binwidth=5) + 
+  ggtitle("Histogram of movie lengths")
+```
+
+### As we can see, there are two noticeable spikes in this histogram. This is mostly explained by the fact that there is usually an average time range for short films and a different time range for regular movies. Therefore, it can be deduced that most short films (maybe even animated shorts) are under 30 mins, whereas most regular films are about 100 mins in length.
+
+## Histogram of movie lengths by genre
+```{r}
+gather(df, "genre","in_genre", 18:24) %>% filter(in_genre==1, length < 300) %>% 
+  ggplot(aes(length, fill=genre)) + geom_histogram(binwidth=5, show.legend=F) + facet_wrap(~genre)
+```
+
+### The previous hypothesis is thus supported by the individual histograms above. Two spikes clearly emerge here. The first smaller one is mainly from the short and animated movies, whereas dramas, comedies, romance, and action movies are all about 100 mins in length, thus contributing to the second spike.
+
+# 8) Number of movies per genre by year
+```{r}
+gather(df, "genre","in_genre",18:24) %>% filter(in_genre == 1, year >= 1990) %>% 
+  group_by(year, genre) %>% count() %>% ggplot(aes(x=year, y=n, group=genre, color=genre)) + 
+  ylab("count") + ggtitle("Total Movies Produced by Genre from 1990-2005") + 
+  geom_line(lwd=1) + geom_point()
+```
+
+### From the plot above, it is clear that the three most produced movies are dramas, comedies, and shorts. The least produced is animated movies. There is, however, a huge drop in production across all genres from 2004 to 2005. There may be several reasons for this, maybe the data is incomplete, maybe there is an external reason which requires further research.
+
+## Budget of movies per genre by year
+```{r}
+gather(df, "genre","in_genre",18:24) %>% 
+filter(in_genre == 1, !is.na(budget), budget > 0, year > 1960) %>% group_by(year, genre) %>% 
+summarize("budget" = mean(budget)) %>% ggplot(aes(x=year, y=budget/1000000, group=genre, color=genre)) + 
+geom_line() + geom_point() + ggtitle("Average Budget of Movies Produced per genre from 1960-2005") + 
+xlab("Year") + ylab("Budget in USD (in millions)") + scale_y_continuous(breaks = seq(0, 60, 10)) +
+scale_x_continuous(breaks = seq(1960, 2005, 5))
+```
+
+### Animated movies have gotten a lot more expensive, thus explaining why they are the least produced genre of movies. Shorts (also dramas and comedies), on the other hand, are some of the least expensive, also explaining why so many of them are produced in the previous plot.
+
+## Average number of votes per genre
+```{r}
+gather(df, "genre","in_genre",18:24) %>% filter(in_genre == 1) %>% group_by(genre) %>% 
+  summarize(mean_votes = mean(votes)) %>% arrange(desc(mean_votes)) %>% 
+  mutate(mean_votes = sprintf("%0.2f", mean_votes))
+```
+
+### Since this dataset does not have information about the box-office collection of each movie, the mean number of votes can be used to estimate which genre of movies are most popular. Action movies are at the top, so we can guess that action movies are probably more popular than the other genres. Shorts are at the bottom, meaning not many people actually watch them to even vote.
+
+## What is the relationship between the ratings per genre?
+```{r}
+gather(df, "genre","in_genre",18:24) %>% filter(in_genre == 1, mpaa != "") %>% 
+  group_by(genre, mpaa) %>% count() %>% ggplot(aes(x=genre, y=n, fill=mpaa)) + 
+  geom_bar(stat='identity', position = 'dodge') + 
+  ggtitle("Number of Ratings per Category by Genre") + ylab("count")
+```
+
+### R rating is the most common for all genres except Animation, which makes sense, because animated movies are usually targeted towards children. Second is PG-13 and third is PG. Dramas have an incredible amount of R ratings, whereas Shorts barely have any ratings at all. It is also important to consider than a majority of the data did not have any ratings included. NC-17 is least popular in that it only appears for the Comedy and Drama genres.
